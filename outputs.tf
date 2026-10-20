@@ -1,0 +1,86 @@
+# ==============================================================================
+# OpenShift SNO Lab Infrastructure Outputs
+# ==============================================================================
+
+output "network_name" {
+  description = "Dedicated isolated libvirt network name"
+  value       = libvirt_network.ocp_net.name
+}
+
+output "bridge_interface" {
+  description = "Dedicated bridge interface name on host"
+  value       = var.bridge_name
+}
+
+output "network_cidr" {
+  description = "CIDR range of the isolated lab network"
+  value       = var.network_cidr
+}
+
+output "storage_pool_name" {
+  description = "NVMe libvirt storage pool name"
+  value       = libvirt_pool.nvme_pool.name
+}
+
+output "storage_pool_path" {
+  description = "NVMe filesystem mount path"
+  value       = var.nvme_storage_path
+}
+
+output "bastion_vm_name" {
+  description = "Name of the Helper-Bastion VM"
+  value       = libvirt_domain.bastion.name
+}
+
+output "bastion_ip" {
+  description = "Static IP of the Helper-Bastion VM"
+  value       = var.bastion_ip
+}
+
+output "bastion_ssh_command" {
+  description = "SSH command to connect to Helper-Bastion from host"
+  value       = "ssh ${var.admin_username}@${var.bastion_ip}"
+}
+
+output "sno_vm_name" {
+  description = "Name of the SNO Target VM"
+  value       = libvirt_domain.sno.name
+}
+
+output "sno_ip" {
+  description = "Pinned static IP of the SNO node"
+  value       = var.sno_ip
+}
+
+output "sno_mac" {
+  description = "Pinned static MAC address of the SNO node"
+  value       = var.sno_mac
+}
+
+output "cluster_endpoints" {
+  description = "Key cluster endpoints handled by dnsmasq and haproxy"
+  value = {
+    api     = "https://api.${var.network_domain}:6443"
+    api_int = "https://api-int.${var.network_domain}:22623"
+    apps    = "*.apps.${var.network_domain}"
+    stats   = "http://${var.bastion_ip}:9000"
+  }
+}
+
+output "next_steps" {
+  description = "Next operational actions to proceed with deployment"
+  value       = <<-EOT
+    1. Provision Bastion Services:
+       ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+
+    2. Verify Bastion Split DNS & HAProxy:
+       ./scripts/verify_bastion.sh
+
+    3. Attach Assisted Installer Discovery ISO to SNO VM:
+       ./scripts/attach_iso.sh /path/to/rhcos-discovery.iso
+
+    4. Power On SNO VM & Monitor Rendezvous:
+       virsh -c ${var.libvirt_uri} start ${var.sno_vm_name}
+       ./scripts/wait_for_rendezvous.sh
+  EOT
+}

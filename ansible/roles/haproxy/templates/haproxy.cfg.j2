@@ -1,0 +1,82 @@
+# ==============================================================================
+# HAProxy Configuration for Single Node OpenShift (SNO) Lab
+# Routes API, Machine-Config, and Ingress traffic to SNO Node
+# ==============================================================================
+
+global
+    log         127.0.0.1 local2
+    chroot      /var/lib/haproxy
+    pidfile     /var/run/haproxy.pid
+    maxconn     4000
+    user        haproxy
+    group       haproxy
+    daemon
+    stats socket /var/lib/haproxy/stats mode 660 level admin expose-fd listeners
+
+defaults
+    mode                    tcp
+    log                     global
+    option                  tcplog
+    option                  dontlognull
+    retries                 3
+    timeout queue           1m
+    timeout connect         10s
+    timeout client          1m
+    timeout server          1m
+    timeout check           10s
+    maxconn                 3000
+
+# ------------------------------------------------------------------------------
+# HAProxy Statistics Dashboard
+# ------------------------------------------------------------------------------
+listen stats
+    mode http
+    bind 0.0.0.0:9000
+    stats enable
+    stats uri /
+    stats refresh 5s
+    stats admin if TRUE
+
+# ------------------------------------------------------------------------------
+# OpenShift API (Port 6443)
+# ------------------------------------------------------------------------------
+frontend openshift_api
+    bind 0.0.0.0:6443
+    default_backend sno_api
+
+backend sno_api
+    balance source
+    server sno-node {{ sno_ip }}:6443 check check-ssl verify none inter 2s fall 3 rise 2
+
+# ------------------------------------------------------------------------------
+# OpenShift Machine Config Server (Port 22623)
+# ------------------------------------------------------------------------------
+frontend openshift_machine_config
+    bind 0.0.0.0:22623
+    default_backend sno_machine_config
+
+backend sno_machine_config
+    balance source
+    server sno-node {{ sno_ip }}:22623 check check-ssl verify none inter 2s fall 3 rise 2
+
+# ------------------------------------------------------------------------------
+# OpenShift Ingress HTTP Router (Port 80)
+# ------------------------------------------------------------------------------
+frontend openshift_http
+    bind 0.0.0.0:80
+    default_backend sno_http
+
+backend sno_http
+    balance roundrobin
+    server sno-node {{ sno_ip }}:80 check inter 2s fall 3 rise 2
+
+# ------------------------------------------------------------------------------
+# OpenShift Ingress HTTPS Router (Port 443)
+# ------------------------------------------------------------------------------
+frontend openshift_https
+    bind 0.0.0.0:443
+    default_backend sno_https
+
+backend sno_https
+    balance roundrobin
+    server sno-node {{ sno_ip }}:443 check inter 2s fall 3 rise 2

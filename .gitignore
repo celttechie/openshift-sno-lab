@@ -1,0 +1,34 @@
+# OpenTofu / Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfstate.*
+tfplan
+*.tfplan
+terraform.tfvars
+
+# Credentials and sensitive cluster assets
+*pull-secret*.json
+pull-secret*
+auth.json
+kubeconfig
+kubeadmin-password
+install-config.yaml
+.openshift_install*
+
+# Virtual machine images and media
+*.iso
+*.qcow2
+*.img
+*.raw
+
+# Ansible artifacts
+*.retry
+.ansible/
+
+# Editor and OS
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store

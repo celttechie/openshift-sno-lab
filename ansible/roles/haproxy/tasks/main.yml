@@ -1,0 +1,44 @@
+---
+- name: Install HAProxy package
+  ansible.builtin.dnf:
+    name: haproxy
+    state: present
+
+- name: Allow HAProxy to connect to any TCP port under SELinux
+  ansible.posix.seboolean:
+    name: haproxy_connect_any
+    state: true
+    persistent: true
+
+- name: Deploy HAProxy configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /etc/haproxy/haproxy.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart haproxy
+
+- name: Allow HAProxy service ports in firewalld
+  ansible.posix.firewalld:
+    port: "{{ item }}"
+    permanent: true
+    state: enabled
+    immediate: true
+  loop:
+    - 80/tcp
+    - 443/tcp
+    - 6443/tcp
+    - 22623/tcp
+    - 9000/tcp
+
+- name: Enable and start HAProxy service
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started
+    enabled: true
+
+- name: Verify HAProxy service status
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started

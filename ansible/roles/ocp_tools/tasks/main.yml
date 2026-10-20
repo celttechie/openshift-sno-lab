@@ -1,0 +1,77 @@
+---
+- name: Create temporary download directory for OpenShift binaries
+  ansible.builtin.file:
+    path: /tmp/ocp_binaries
+    state: directory
+    mode: "0755"
+
+- name: Download OpenShift Client archive (oc and kubectl)
+  ansible.builtin.get_url:
+    url: "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/{{ ocp_version | default('stable') }}/openshift-client-linux.tar.gz"
+    dest: /tmp/ocp_binaries/openshift-client-linux.tar.gz
+    mode: "0644"
+
+- name: Extract oc and kubectl into /usr/local/bin
+  ansible.builtin.unarchive:
+    src: /tmp/ocp_binaries/openshift-client-linux.tar.gz
+    dest: /usr/local/bin/
+    remote_src: true
+    include:
+      - oc
+      - kubectl
+    mode: "0755"
+
+- name: Download OpenShift Installer archive
+  ansible.builtin.get_url:
+    url: "https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/ocp/{{ ocp_version | default('stable') }}/openshift-install-linux.tar.gz"
+    dest: /tmp/ocp_binaries/openshift-install-linux.tar.gz
+    mode: "0644"
+  ignore_errors: true
+  register: ocp_installer_download
+
+- name: Extract openshift-install into /usr/local/bin
+  ansible.builtin.unarchive:
+    src: /tmp/ocp_binaries/openshift-install-linux.tar.gz
+    dest: /usr/local/bin/
+    remote_src: true
+    include:
+      - openshift-install
+    mode: "0755"
+  when: ocp_installer_download is succeeded
+
+- name: Install Assisted Installer CLI (aicli) via pip
+  ansible.builtin.pip:
+    name: aicli
+    state: latest
+    executable: pip3
+
+- name: Clean up temporary installer binaries
+  ansible.builtin.file:
+    path: /tmp/ocp_binaries
+    state: absent
+
+- name: Configure bash completion for oc
+  ansible.builtin.shell:
+    cmd: /usr/local/bin/oc completion bash > /etc/bash_completion.d/oc
+  args:
+    creates: /etc/bash_completion.d/oc
+
+- name: Configure bash completion for kubectl
+  ansible.builtin.shell:
+    cmd: /usr/local/bin/kubectl completion bash > /etc/bash_completion.d/kubectl
+  args:
+    creates: /etc/bash_completion.d/kubectl
+
+- name: Verify installed CLI versions
+  ansible.builtin.command:
+    cmd: "/usr/local/bin/{{ item }} version --client"
+  loop:
+    - oc
+    - kubectl
+  register: cli_versions
+  changed_when: false
+
+- name: Display client versions
+  ansible.builtin.debug:
+    msg: "{{ item.stdout }}"
+  loop: "{{ cli_versions.results }}"

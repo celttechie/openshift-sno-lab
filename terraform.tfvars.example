@@ -1,0 +1,41 @@
+# ==============================================================================
+# OpenShift SNO Lab Example Configuration (terraform.tfvars)
+# Platform: Dell Precision T5600 Headless Hypervisor Host
+# ==============================================================================
+
+# Hypervisor connection (supports local qemu:///system or remote SSH)
+libvirt_uri = "qemu+ssh://bjarrett@t5600/system"
+
+# Isolated network configuration
+network_name    = "ocp-lab-net"
+bridge_name     = "virbr-ocp"
+network_cidr    = "192.168.150.0/24"
+network_gateway = "192.168.150.1"
+network_domain  = "sno.lab.local"
+
+# NVMe Fast Storage Pool (dedicated PCIe adapter pool for etcd fsync)
+nvme_storage_pool_name = "ocp_nvme"
+nvme_storage_path      = "/mnt/nvme_data/ocp_storage"
+
+# Helper-Bastion VM (Rocky Linux 9)
+bastion_vm_name           = "sno-bastion"
+bastion_vcpu              = 2
+bastion_memory_mb         = 4096
+bastion_disk_size_bytes   = 32212254720 # 30 GB
+bastion_ip                = "192.168.150.10"
+bastion_mac               = "52:54:00:15:00:10"
+bastion_base_image_source = "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
+admin_username            = "bjarrett"
+ssh_public_key_path       = "~/.ssh/id_ed25519.pub"
+
+# Target SNO Node
+sno_vm_name            = "sno-node"
+sno_vcpu               = 8
+sno_memory_mb          = 32768 # 32 GB
+sno_disk_size_bytes    = 128849018880 # 120 GB
+sno_ip                 = "192.168.150.50"
+sno_mac                = "52:54:00:15:00:50"
+sno_discovery_iso_path = "" # Path to Assisted Installer ISO on hypervisor host
+disk_cache             = "none"
+disk_io                = "threads"
+sno_autostart          = false

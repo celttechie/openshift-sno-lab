@@ -1,0 +1,51 @@
+---
+- name: Install dnsmasq package
+  ansible.builtin.dnf:
+    name: dnsmasq
+    state: present
+
+- name: Deploy SNO split-DNS dnsmasq configuration
+  ansible.builtin.template:
+    src: sno-split-dns.conf.j2
+    dest: /etc/dnsmasq.d/sno.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart dnsmasq
+
+- name: Allow DNS (UDP & TCP) in firewalld
+  ansible.posix.firewalld:
+    service: dns
+    permanent: true
+    state: enabled
+    immediate: true
+
+- name: Enable and start dnsmasq service
+  ansible.builtin.systemd:
+    name: dnsmasq
+    state: started
+    enabled: true
+
+- name: Configure local resolv.conf to query local dnsmasq first
+  ansible.builtin.lineinfile:
+    path: /etc/resolv.conf
+    line: "nameserver 127.0.0.1"
+    insertbefore: BOF
+    state: present
+
+- name: Flush handlers to ensure dnsmasq is restarted if config changed
+  ansible.builtin.meta: flush_handlers
+
+- name: Validate local cluster DNS resolution (api.{{ network_domain }})
+  ansible.builtin.command:
+    cmd: "dig +short @127.0.0.1 api.{{ network_domain }}"
+  register: dns_test_api
+  changed_when: false
+  failed_when: dns_test_api.stdout != sno_ip
+
+- name: Validate wildcard apps DNS resolution (*.apps.{{ network_domain }})
+  ansible.builtin.command:
+    cmd: "dig +short @127.0.0.1 console-openshift-console.apps.{{ network_domain }}"
+  register: dns_test_apps
+  changed_when: false
+  failed_when: dns_test_apps.stdout != sno_ip

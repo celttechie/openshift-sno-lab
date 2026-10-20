@@ -1,0 +1,16 @@
+---
+# ==============================================================================
+# Helper-Bastion Provisioning Playbook for OpenShift SNO Lab
+# Configures dnsmasq split-DNS, haproxy ingress/API routing, and OCP CLI tools
+# ==============================================================================
+
+- name: Provision OpenShift Helper-Bastion VM
+  hosts: bastion
+  become: true
+  gather_facts: true
+
+  roles:
+    - common
+    - dnsmasq
+    - haproxy
+    - ocp_tools
