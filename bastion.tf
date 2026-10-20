@@ -8,10 +8,12 @@ resource "libvirt_cloudinit_disk" "bastion_cloudinit" {
   pool = libvirt_pool.nvme_pool.name
 
   user_data = templatefile("${path.module}/templates/cloud_init_bastion.cfg", {
-    hostname       = var.bastion_vm_name
-    domain         = var.network_domain
-    admin_username = var.admin_username
-    ssh_public_key = file(pathexpand(var.ssh_public_key_path))
+    hostname              = var.bastion_vm_name
+    domain                = var.network_domain
+    admin_username        = var.admin_username
+    ssh_public_key        = var.ssh_public_key_path != "" ? file(pathexpand(var.ssh_public_key_path)) : tls_private_key.operator.public_key_openssh
+    bastion_host_key_priv = tls_private_key.bastion_host.private_key_openssh
+    bastion_host_key_pub  = tls_private_key.bastion_host.public_key_openssh
   })
 
   network_config = templatefile("${path.module}/templates/network_config_bastion.cfg", {

@@ -26,7 +26,7 @@ bastion_ip                = "192.168.150.10"
 bastion_mac               = "52:54:00:15:00:10"
 bastion_base_image_source = "https://download.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2"
 admin_username            = "bjarrett"
-ssh_public_key_path       = "~/.ssh/id_ed25519.pub"
+ssh_public_key_path       = "" # Leave blank to auto-generate native OpenTofu Ed25519 keypair
 
 # Target SNO Node
 sno_vm_name            = "sno-node"

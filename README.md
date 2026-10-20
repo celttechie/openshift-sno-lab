@@ -9,6 +9,7 @@
 [![Host Target](https://img.shields.io/badge/Host-Dell%20Precision%20T5600-lightgrey.svg)](scripts/precheck.sh)
 [![Storage](https://img.shields.io/badge/Storage-NVMe%20PCIe%20Adapter-success.svg)](storage.tf)
 [![Network Isolation](https://img.shields.io/badge/Network-192.168.150.0%2F24%20(virbr--ocp)-blueviolet.svg)](network.tf)
+[![Security: Native Ed25519 Keys](https://img.shields.io/badge/Security-Native%20Ed25519%20Keys-purple.svg)](keys.tf)
 
 An automated, isolated Single Node OpenShift (SNO) lab deployment on a headless **Dell Precision T5600** KVM hypervisor host using the **Peer Bastion** architecture via KVM/libvirt, OpenTofu, and Ansible.
 
@@ -51,6 +52,7 @@ Designed to run **strictly alongside existing libvirt networks, storage pools, a
 ### Key Design Pillars
 - **Flat Peer-VM Topology**: Bastion and SNO reside as peer virtual machines on the same dedicated libvirt network (`ocp-lab-net`), avoiding nested virtualization and CRC overhead.
 - **NVMe Low-Latency Caching**: SNO root disk is allocated on the dedicated NVMe PCIe adapter pool (`/mnt/nvme_data`) with XSLT driver overrides (`cache=none`, `io=threads`) to satisfy etcd fsync latency (<10ms p99).
+- **Declarative Cryptographic Security**: OpenTofu natively generates isolated Ed25519 keypairs for the operator and Bastion host (`tls_private_key`), pre-pinning `.keys/known_hosts` so `StrictHostKeyChecking=yes` is strictly enforced with zero MITM vulnerabilities, zero private keys stored in Git, and zero external Python dependencies.
 - **Zero Collision Guarantee**: Uses custom bridge `virbr-ocp` and subnet `192.168.150.0/24`, completely isolated from `virbr0`, `br0`, or `virbr1`.
 - **Automated Split-DNS & Reverse Proxy**: Bastion handles wildcard resolution (`*.apps.sno.lab.local`, `api.sno.lab.local`) and load balances ingress and control-plane traffic.
 
@@ -87,12 +89,16 @@ openshift-sno-lab/
 ├── versions.tf                             # OpenTofu provider configuration
 ├── variables.tf                            # Configurable parameters & sizing
 ├── main.tf                                 # Provider setup
+├── keys.tf                                 # Native OpenTofu Ed25519 cryptographic key management
 ├── network.tf                              # ocp-lab-net isolated libvirt network
 ├── storage.tf                              # NVMe PCIe storage pool & volumes
 ├── bastion.tf                              # Helper-Bastion VM & cloud-init
 ├── sno.tf                                  # SNO target VM & disk cache tuning
 ├── outputs.tf                              # Useful output variables & endpoints
 ├── terraform.tfvars.example                # Example configuration values
+├── docs/
+│   └── adr/
+│       └── 0001-deterministic-cryptographic-identities-and-ssh-key-management.md
 ├── templates/
 │   ├── cloud_init_bastion.cfg              # Cloud-init user-data for Rocky 9
 │   ├── network_config_bastion.cfg          # Cloud-init network configuration

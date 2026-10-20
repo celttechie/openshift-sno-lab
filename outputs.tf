@@ -38,8 +38,18 @@ output "bastion_ip" {
 }
 
 output "bastion_ssh_command" {
-  description = "SSH command to connect to Helper-Bastion from host"
-  value       = "ssh ${var.admin_username}@${var.bastion_ip}"
+  description = "Secure SSH command with strict host key verification using pre-pinned known_hosts"
+  value       = "ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=${path.module}/.keys/known_hosts -i ${path.module}/.keys/id_ed25519_operator -o ProxyJump=t5600 ${var.admin_username}@${var.bastion_ip}"
+}
+
+output "ssh_identity_assets" {
+  description = "Native OpenTofu Ed25519 cryptographic key assets"
+  value = {
+    operator_public_key     = tls_private_key.operator.public_key_openssh
+    operator_private_key    = local_file.operator_private_key.filename
+    bastion_host_public_key = tls_private_key.bastion_host.public_key_openssh
+    known_hosts_file        = local_file.known_hosts.filename
+  }
 }
 
 output "sno_vm_name" {

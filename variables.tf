@@ -108,9 +108,9 @@ variable "admin_username" {
 }
 
 variable "ssh_public_key_path" {
-  description = "Path to local SSH public key to inject into Bastion"
+  description = "Optional override path to an existing SSH public key. If empty, the native OpenTofu Ed25519 key is generated and used."
   type        = string
-  default     = "~/.ssh/id_ed25519.pub"
+  default     = ""
 }
 
 # ------------------------------------------------------------------------------

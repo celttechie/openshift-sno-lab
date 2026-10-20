@@ -18,6 +18,9 @@ SNO_IP="${SNO_IP:-192.168.150.50}"
 DOMAIN="${DOMAIN:-sno.lab.local}"
 SSH_USER="${SSH_USER:-bjarrett}"
 JUMP_HOST="${JUMP_HOST:-t5600}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KNOWN_HOSTS="${REPO_ROOT}/.keys/known_hosts"
+SSH_KEY="${REPO_ROOT}/.keys/id_ed25519_operator"
 
 echo -e "${BLUE}${BOLD}================================================================${NC}"
 echo -e "${BLUE}${BOLD}        OpenShift Helper-Bastion Health & Service Verification   ${NC}"
@@ -29,12 +32,18 @@ echo ""
 
 ALL_PASS=true
 
-# Helper to execute command on bastion
+# Helper to execute command on bastion with strict host key checking
 bastion_exec() {
   if [ "$(hostname)" = "sno-bastion" ]; then
     eval "$@"
   else
-    ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ProxyJump="${JUMP_HOST}" "${SSH_USER}@${BASTION_IP}" "$@"
+    local ssh_cmd=("ssh" "-o" "BatchMode=yes" "-o" "ProxyJump=${JUMP_HOST}")
+    if [[ -f "${KNOWN_HOSTS}" && -f "${SSH_KEY}" ]]; then
+      ssh_cmd+=("-o" "StrictHostKeyChecking=yes" "-o" "UserKnownHostsFile=${KNOWN_HOSTS}" "-i" "${SSH_KEY}")
+    else
+      ssh_cmd+=("-o" "StrictHostKeyChecking=no")
+    fi
+    "${ssh_cmd[@]}" "${SSH_USER}@${BASTION_IP}" "$@"
   fi
 }
 
