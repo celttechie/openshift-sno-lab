@@ -20,6 +20,9 @@ DOMAIN="${DOMAIN:-sno.lab.local}"
 SSH_USER="${SSH_USER:-bjarrett}"
 JUMP_HOST="${JUMP_HOST:-t5600}"
 MAX_WAIT_MINS="${MAX_WAIT_MINS:-45}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+KNOWN_HOSTS="${REPO_ROOT}/.keys/known_hosts"
+SSH_KEY="${REPO_ROOT}/.keys/id_ed25519_operator"
 
 echo -e "${BLUE}${BOLD}================================================================${NC}"
 echo -e "${BLUE}${BOLD}        OpenShift SNO Rendezvous & Cluster Convergence Monitor  ${NC}"
@@ -34,7 +37,13 @@ bastion_exec() {
   if [ "$(hostname)" = "sno-bastion" ]; then
     eval "$@"
   else
-    ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o ProxyJump="${JUMP_HOST}" "${SSH_USER}@${BASTION_IP}" "$@"
+    local ssh_cmd=("ssh" "-o" "BatchMode=yes" "-o" "ProxyJump=${JUMP_HOST}")
+    if [[ -f "${KNOWN_HOSTS}" && -f "${SSH_KEY}" ]]; then
+      ssh_cmd+=("-o" "StrictHostKeyChecking=yes" "-o" "UserKnownHostsFile=${KNOWN_HOSTS}" "-i" "${SSH_KEY}")
+    else
+      ssh_cmd+=("-o" "StrictHostKeyChecking=no")
+    fi
+    "${ssh_cmd[@]}" "${SSH_USER}@${BASTION_IP}" "$@"
   fi
 }
 

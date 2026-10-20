@@ -7,7 +7,7 @@ tfplan
 *.tfplan
 terraform.tfvars
 
-# Credentials and sensitive cluster assets
+# Credentials, keys, and sensitive cluster assets
 *pull-secret*.json
 pull-secret*
 auth.json
@@ -15,6 +15,11 @@ kubeconfig
 kubeadmin-password
 install-config.yaml
 .openshift_install*
+.keys/
+*.key
+id_ed25519*
+known_hosts*
+ssh_host_*
 
 # Virtual machine images and media
 *.iso

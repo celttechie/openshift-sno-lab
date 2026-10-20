@@ -44,8 +44,8 @@ verify-bastion: ## Verify split-DNS resolution, HAProxy listeners, and CLI tools
 	./scripts/verify_bastion.sh
 
 .PHONY: ssh-bastion
-ssh-bastion: ## Open interactive SSH session to Helper-Bastion via jump host
-	ssh -o StrictHostKeyChecking=no -o ProxyJump=$(JUMP_HOST) bjarrett@$(BASTION_IP)
+ssh-bastion: ## Open interactive SSH session to Helper-Bastion with strict host key checking
+	ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=.keys/known_hosts -i .keys/id_ed25519_operator -o ProxyJump=$(JUMP_HOST) bjarrett@$(BASTION_IP)
 
 .PHONY: attach-iso
 attach-iso: ## Attach Discovery ISO to SNO VM (Usage: make attach-iso ISO=/path/to/rhcos.iso)
