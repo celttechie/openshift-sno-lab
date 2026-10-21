@@ -57,8 +57,9 @@ fi
 CDROM_DEV=$(virsh -c "${LIBVIRT_URI}" domblklist "${VM_NAME}" | grep -E 'cdrom|iso|\.iso' | awk '{print $1}' | head -n 1 || true)
 
 if [[ -z "${CDROM_DEV}" ]]; then
-  # No existing cdrom device found in blklist; attach disk device
-  echo "No active CD-ROM block target detected; attaching disk as virtual cdrom..."
+  # No existing cdrom device found in blklist; attach disk device using virtio-scsi bus
+  echo "No active CD-ROM block target detected; attaching disk as virtio-scsi cdrom..."
+  virsh -c "${LIBVIRT_URI}" attach-disk "${VM_NAME}" "${ISO_PATH}" sdb --type cdrom --mode readonly --targetbus scsi --config || \
   virsh -c "${LIBVIRT_URI}" attach-disk "${VM_NAME}" "${ISO_PATH}" sdb --type cdrom --mode readonly --config || true
   CDROM_DEV="sdb"
 else

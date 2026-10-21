@@ -35,7 +35,12 @@ sno_memory_mb          = 32768 # 32 GB
 sno_disk_size_bytes    = 128849018880 # 120 GB
 sno_ip                 = "192.168.150.50"
 sno_mac                = "52:54:00:15:00:50"
-sno_discovery_iso_path = "" # Path to Assisted Installer ISO on hypervisor host
+sno_discovery_iso_path = "" # Path to existing ISO on hypervisor host (leave blank if using redhat_offline_token)
 disk_cache             = "none"
 disk_io                = "threads"
-sno_autostart          = false
+sno_autostart          = false # Set to true for zero-touch boot when redhat_offline_token is provided
+
+# Automated Assisted Installer API Provisioning (Optional, eliminates Web Console ClickOps)
+# Obtain your free token at: https://console.redhat.com/openshift/token
+redhat_offline_token = ""
+ocp_version          = "4.22"

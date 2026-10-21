@@ -20,4 +20,13 @@
       <xsl:attribute name="io">threads</xsl:attribute>
     </xsl:copy>
   </xsl:template>
+
+  <!-- Enforce modern virtio-scsi controller for RHEL 9 / CoreOS compatibility -->
+  <xsl:template match="controller[@type='scsi']">
+    <xsl:copy>
+      <xsl:apply-templates select="@*"/>
+      <xsl:attribute name="model">virtio-scsi</xsl:attribute>
+      <xsl:apply-templates select="node()"/>
+    </xsl:copy>
+  </xsl:template>
 </xsl:stylesheet>

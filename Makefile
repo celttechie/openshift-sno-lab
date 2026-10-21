@@ -47,6 +47,14 @@ verify-bastion: ## Verify split-DNS resolution, HAProxy listeners, and CLI tools
 ssh-bastion: ## Open interactive SSH session to Helper-Bastion with strict host key checking
 	ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=.keys/known_hosts -i .keys/id_ed25519_operator -o ProxyJump=$(JUMP_HOST) bjarrett@$(BASTION_IP)
 
+.PHONY: ssh-sno
+ssh-sno: ## Open interactive SSH session to SNO node as core user via Jump Host
+	ssh -o StrictHostKeyChecking=no -i .keys/id_ed25519_operator -o ProxyJump=$(JUMP_HOST) core@$(SNO_IP)
+
+.PHONY: fetch-iso
+fetch-iso: ## Fetch Discovery ISO via Assisted Installer API (Usage: make fetch-iso TOKEN=<offline_token>)
+	./scripts/fetch_discovery_iso.sh $(if $(TOKEN),--token $(TOKEN),)
+
 .PHONY: attach-iso
 attach-iso: ## Attach Discovery ISO to SNO VM (Usage: make attach-iso ISO=/path/to/rhcos.iso)
 	@if [ -z "$(ISO)" ]; then echo "Error: specify ISO path. Example: make attach-iso ISO=/mnt/nvme_data/ocp_storage/discovery.iso"; exit 1; fi

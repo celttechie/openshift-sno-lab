@@ -41,6 +41,18 @@ variable "network_domain" {
   default     = "sno.lab.local"
 }
 
+variable "cluster_name" {
+  description = "OpenShift cluster name"
+  type        = string
+  default     = "sno"
+}
+
+variable "base_domain" {
+  description = "OpenShift base DNS domain"
+  type        = string
+  default     = "lab.local"
+}
+
 # ------------------------------------------------------------------------------
 # NVMe Storage Variables
 # ------------------------------------------------------------------------------
@@ -153,9 +165,22 @@ variable "sno_mac" {
 }
 
 variable "sno_discovery_iso_path" {
-  description = "Path to the Red Hat Assisted Installer / live discovery ISO (on hypervisor host). Leave blank if attaching post-provisioning."
+  description = "Path to the Red Hat Assisted Installer / live discovery ISO (on hypervisor host). Leave blank if using redhat_offline_token or attaching post-provisioning."
   type        = string
   default     = ""
+}
+
+variable "redhat_offline_token" {
+  description = "Red Hat offline API token from console.redhat.com/openshift/token. When provided, OpenTofu automatically creates the cluster definition and streams the discovery ISO via the Assisted Installer REST API."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "ocp_version" {
+  description = "Target OpenShift release version for Assisted Installer Discovery ISO (default: 4.22)"
+  type        = string
+  default     = "4.22"
 }
 
 variable "disk_cache" {
