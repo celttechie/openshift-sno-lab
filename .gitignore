@@ -12,6 +12,8 @@ terraform.tfvars
 pull-secret*
 auth.json
 kubeconfig
+*.kubeconfig
+.kube/
 kubeadmin-password
 install-config.yaml
 .openshift_install*

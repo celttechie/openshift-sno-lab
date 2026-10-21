@@ -19,6 +19,8 @@ SNO_IP="${SNO_IP:-192.168.150.50}"
 DOMAIN="${DOMAIN:-sno.lab.local}"
 SSH_USER="${SSH_USER:-bjarrett}"
 JUMP_HOST="${JUMP_HOST:-t5600}"
+VM_NAME="${VM_NAME:-sno-node}"
+LIBVIRT_URI="${LIBVIRT_URI:-qemu+ssh://bjarrett@${JUMP_HOST}/system}"
 MAX_WAIT_MINS="${MAX_WAIT_MINS:-45}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KNOWN_HOSTS="${REPO_ROOT}/.keys/known_hosts"
@@ -47,12 +49,23 @@ bastion_exec() {
   fi
 }
 
+eject_iso() {
+  local cdrom_dev
+  cdrom_dev=$(virsh -c "${LIBVIRT_URI}" domblklist "${VM_NAME}" 2>/dev/null | grep -E 'cdrom|iso|\.iso' | awk '{print $1}' | head -n 1 || true)
+  if [[ -n "${cdrom_dev}" ]]; then
+    virsh -c "${LIBVIRT_URI}" change-media "${VM_NAME}" "${cdrom_dev}" --eject --config --live 2>/dev/null || \
+    virsh -c "${LIBVIRT_URI}" detach-disk "${VM_NAME}" "${cdrom_dev}" --config 2>/dev/null || true
+  fi
+  return 0
+}
+
+START_TIME=$(date +%s)
+END_TIME=$(( START_TIME + (MAX_WAIT_MINS * 60) ))
+
 # ------------------------------------------------------------------------------
 # 1. Wait for Discovery Ping on SNO IP
 # ------------------------------------------------------------------------------
-echo -e "${BOLD}[1/3] Waiting for SNO Node Network Discovery (${SNO_IP})...${NC}"
-START_TIME=$(date +%s)
-END_TIME=$(( START_TIME + (MAX_WAIT_MINS * 60) ))
+echo -e "${BOLD}[1/4] Waiting for SNO Node Network Discovery (${SNO_IP})...${NC}"
 
 while true; do
   if bastion_exec "ping -c 1 -W 2 ${SNO_IP}" > /dev/null 2>&1; then
@@ -72,15 +85,87 @@ while true; do
 done
 
 # ------------------------------------------------------------------------------
-# 2. Wait for Kubernetes / OpenShift API Server (Port 6443)
+# 2. Monitor Installation Progress & Auto-Eject Discovery ISO
 # ------------------------------------------------------------------------------
-echo -e "\n${BOLD}[2/3] Waiting for OpenShift API Server Rendezvous (Port 6443)...${NC}"
-echo "  (Note: SNO writes RHCOS to NVMe, reboots, and initializes etcd before API becomes healthy. This typically takes 15-25 minutes.)"
+echo -e "\n${BOLD}[2/4] Monitoring Installation Progress & Managing Boot Media...${NC}"
+echo "  (Assisted Installer writes RHCOS to NVMe root disk, reboots, and initializes etcd.)"
+
+# Retrieve offline token from env or tfvars if available
+OFFLINE_TOKEN="${REDHAT_OFFLINE_TOKEN:-}"
+if [[ -z "${OFFLINE_TOKEN}" && -f "${REPO_ROOT}/terraform.tfvars" ]]; then
+  OFFLINE_TOKEN=$(grep -E '^\s*redhat_offline_token\s*=' "${REPO_ROOT}/terraform.tfvars" | sed -E 's/^\s*redhat_offline_token\s*=\s*"([^"]+)".*/\1/' || true)
+fi
+
+while true; do
+  # 1. Check if node is running from installed ostree (NVMe disk)
+  if ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -o ProxyJump="${JUMP_HOST}" core@"${SNO_IP}" "grep -q 'ostree' /proc/cmdline" 2>/dev/null; then
+    echo -e "\n  [${GREEN}DISK BOOT CONFIRMED${NC}] SNO Node has successfully booted into installed RHCOS (NVMe)."
+    eject_iso
+    break
+  fi
+
+  # 2. Query Assisted Installer REST API if token available
+  if [[ -n "${OFFLINE_TOKEN}" ]]; then
+    SSO_RES=$(curl -s -X POST "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token" \
+      -d "grant_type=refresh_token" -d "client_id=cloud-services" -d "refresh_token=${OFFLINE_TOKEN}" || true)
+    API_TOKEN=$(echo "${SSO_RES}" | jq -r '.access_token // empty' 2>/dev/null || true)
+    if [[ -n "${API_TOKEN}" ]]; then
+      EXISTING_CLUSTERS=$(curl -s -H "Authorization: Bearer ${API_TOKEN}" "https://api.openshift.com/api/assisted-install/v2/clusters" || echo "[]")
+      CID=$(echo "${EXISTING_CLUSTERS}" | jq -r '.[] | select(.name == "sno") | .id' | head -n 1)
+      if [[ -n "${CID}" ]]; then
+        CLUSTER_INFO=$(curl -s -H "Authorization: Bearer ${API_TOKEN}" "https://api.openshift.com/api/assisted-install/v2/clusters/${CID}" || echo "{}")
+        CLUSTER_STATUS=$(echo "${CLUSTER_INFO}" | jq -r '.status // empty' 2>/dev/null || true)
+        HOST_STATUS=$(echo "${CLUSTER_INFO}" | jq -r '.hosts[0].status // empty' 2>/dev/null || true)
+        HOST_STAGE=$(echo "${CLUSTER_INFO}" | jq -r '.hosts[0].progress.current_stage // empty' 2>/dev/null || true)
+        HOST_PCT=$(echo "${CLUSTER_INFO}" | jq -r '.hosts[0].progress.installation_percentage // 0' 2>/dev/null || true)
+
+        # If cluster validations have passed and cluster is ready, trigger automated installation
+        if [[ "${CLUSTER_STATUS}" == "ready" ]]; then
+          echo -e "\n  [${GREEN}AUTO-INSTALL${NC}] All validations passed. Triggering automated installation via Assisted Installer API..."
+          curl -s -f -X POST -H "Authorization: Bearer ${API_TOKEN}" "https://api.openshift.com/api/assisted-install/v2/clusters/${CID}/actions/install" >/dev/null || true
+          sleep 5
+        fi
+
+        if [[ -n "${HOST_STAGE}" ]]; then
+          echo -ne "  Assisted Installer: stage='${HOST_STAGE}' status='${HOST_STATUS}' (${HOST_PCT}%)...\r"
+        fi
+
+        # If installer has written image to disk or is rebooting, eject media
+        if [[ "${HOST_STAGE}" == *"disk"* || "${HOST_STAGE}" == *"Rebooting"* || "${HOST_STATUS}" == "installing-pending-user-action" || "${HOST_STATUS}" == "installed" ]]; then
+          eject_iso
+        fi
+
+        # If host booted back into discovery ISO by mistake, reset domain to boot from disk
+        if [[ "${HOST_STATUS}" == "installing-pending-user-action" ]]; then
+          echo -e "\n  [${YELLOW}ACTION REQUIRED${NC}] Host booted into ISO instead of disk. Ejecting media and resetting VM..."
+          eject_iso
+          virsh -c "${LIBVIRT_URI}" reset "${VM_NAME}" 2>/dev/null || true
+          sleep 15
+        fi
+      fi
+    fi
+  fi
+
+  CURRENT_TIME=$(date +%s)
+  ELAPSED=$(( (CURRENT_TIME - START_TIME) / 60 ))
+  if [[ ${CURRENT_TIME} -ge ${END_TIME} ]]; then
+    echo -e "\n  [${RED}TIMEOUT${NC}] Node did not boot from disk within ${MAX_WAIT_MINS} minutes."
+    exit 1
+  fi
+
+  sleep 10
+done
+
+# ------------------------------------------------------------------------------
+# 3. Wait for OpenShift API Server Rendezvous (Port 6443)
+# ------------------------------------------------------------------------------
+echo -e "\n${BOLD}[3/4] Waiting for OpenShift API Server Rendezvous (Port 6443)...${NC}"
+echo "  (Node is running from NVMe; waiting for kubelet, etcd, and kube-apiserver static pods to become healthy.)"
 
 while true; do
   API_STATUS=$(bastion_exec "curl -k -s -o /dev/null -w '%{http_code}' https://${SNO_IP}:6443/version || true")
   if [[ "${API_STATUS}" == "200" || "${API_STATUS}" == "401" || "${API_STATUS}" == "403" ]]; then
-    echo -e "\n  [${GREEN}RENDEZVOUS COMPLETE${NC}] OpenShift API is responding (HTTP ${API_STATUS})!"
+    echo -e "\n  [${GREEN}RENDEZVOUS COMPLETE${NC}] OpenShift API is responding on https://${SNO_IP}:6443 (HTTP ${API_STATUS})!"
     break
   fi
 
@@ -96,25 +181,56 @@ while true; do
 done
 
 # ------------------------------------------------------------------------------
-# 3. Check Node & ClusterOperator Convergence (if Kubeconfig exists)
+# 4. Synchronize Admin Kubeconfig & Inspect Cluster Convergence
 # ------------------------------------------------------------------------------
-echo -e "\n${BOLD}[3/3] Inspecting Cluster Convergence via oc...${NC}"
+echo -e "\n${BOLD}[4/4] Synchronizing Admin Kubeconfig & Inspecting Cluster State...${NC}"
 
-HAS_KUBECONFIG=$(bastion_exec "[ -f ~/.kube/config ] || [ -f ~/auth/kubeconfig ] && echo 'YES' || echo 'NO'")
+KUBECONFIG_CONTENT=""
 
-if [[ "${HAS_KUBECONFIG}" == "YES" ]]; then
-  echo -e "  Found kubeconfig on Bastion. Querying cluster state:\n"
-  bastion_exec "KUBECONFIG=\${KUBECONFIG:-\$HOME/auth/kubeconfig} oc get nodes -o wide" || true
-  echo ""
-  bastion_exec "KUBECONFIG=\${KUBECONFIG:-\$HOME/auth/kubeconfig} oc get clusteroperators | head -n 15" || true
+# Method A: Fetch authoritative kubeconfig via Assisted Installer REST API
+if [[ -n "${OFFLINE_TOKEN}" ]]; then
+  echo "  Retrieving authoritative cluster admin kubeconfig via Assisted Installer API..."
+  SSO_RES=$(curl -s -X POST "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token" \
+    -d "grant_type=refresh_token" -d "client_id=cloud-services" -d "refresh_token=${OFFLINE_TOKEN}" || true)
+  API_TOKEN=$(echo "${SSO_RES}" | jq -r '.access_token // empty' 2>/dev/null || true)
+  if [[ -n "${API_TOKEN}" ]]; then
+    EXISTING_CLUSTERS=$(curl -s -H "Authorization: Bearer ${API_TOKEN}" "https://api.openshift.com/api/assisted-install/v2/clusters" || echo "[]")
+    CID=$(echo "${EXISTING_CLUSTERS}" | jq -r '.[] | select(.name == "sno") | .id' | head -n 1)
+    if [[ -n "${CID}" ]]; then
+      KUBECONFIG_CONTENT=$(curl -s -H "Authorization: Bearer ${API_TOKEN}" "https://api.openshift.com/api/assisted-install/v2/clusters/${CID}/downloads/credentials?file_name=kubeconfig" || true)
+    fi
+  fi
+fi
+
+# Method B: Fallback to reading bootstrap secret from SNO node
+if [[ -z "${KUBECONFIG_CONTENT}" || "${KUBECONFIG_CONTENT}" != *"clusters:"* ]]; then
+  echo "  Reading admin kubeconfig directly from SNO node..."
+  KUBECONFIG_CONTENT=$(ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="${JUMP_HOST}" core@"${SNO_IP}" "sudo cat /etc/kubernetes/bootstrap-secrets/kubeconfig 2>/dev/null || sudo cat /etc/kubernetes/kubeconfig 2>/dev/null" || true)
+fi
+
+if [[ -n "${KUBECONFIG_CONTENT}" && "${KUBECONFIG_CONTENT}" == *"clusters:"* ]]; then
+  # Write to local repository .kube/config
+  mkdir -p "${REPO_ROOT}/.kube"
+  echo "${KUBECONFIG_CONTENT}" > "${REPO_ROOT}/.kube/config"
+  chmod 600 "${REPO_ROOT}/.kube/config"
+  echo -e "  [${GREEN}SYNCED${NC}] Admin kubeconfig saved to ${REPO_ROOT}/.kube/config."
+
+  # Write to Bastion ~/.kube/config
+  echo "${KUBECONFIG_CONTENT}" | bastion_exec "mkdir -p ~/.kube && cat > ~/.kube/config && chmod 600 ~/.kube/config"
+  echo -e "  [${GREEN}SYNCED${NC}] Admin kubeconfig installed on ${BASTION_IP}:~/.kube/config."
+
+  # Write to SNO Node ~/.kube/config
+  echo "${KUBECONFIG_CONTENT}" | ssh -q -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ProxyJump="${JUMP_HOST}" core@"${SNO_IP}" "mkdir -p ~/.kube && cat > ~/.kube/config && chmod 600 ~/.kube/config" 2>/dev/null || true
+  echo -e "  [${GREEN}SYNCED${NC}] Admin kubeconfig installed on ${SNO_IP}:~/.kube/config."
+fi
+
+if bastion_exec "[ -s ~/.kube/config ]"; then
+  echo -e "\n  Querying live OpenShift node status:"
+  bastion_exec "oc get nodes -o wide" || true
+  echo -e "\n  Querying OpenShift Cluster Operators:"
+  bastion_exec "oc get clusteroperators" || true
 else
-  echo -e "  [${CYAN}INFO${NC}] Kubeconfig not yet placed at ~/auth/kubeconfig."
-  echo "  Download kubeconfig from Hybrid Cloud Console / Assisted Installer and place at:"
-  echo "    ${SSH_USER}@${BASTION_IP}:~/auth/kubeconfig"
-  echo "  Then run:"
-  echo "    export KUBECONFIG=~/auth/kubeconfig"
-  echo "    oc get nodes"
-  echo "    oc get co"
+  echo -e "  [${CYAN}INFO${NC}] Kubeconfig not yet available. Place at ${SSH_USER}@${BASTION_IP}:~/.kube/config"
 fi
 
 echo ""
