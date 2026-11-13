@@ -77,6 +77,11 @@ output "cluster_endpoints" {
   }
 }
 
+output "discovery_iso_path" {
+  description = "Resolved path to the Assisted Installer Discovery ISO"
+  value       = local.effective_discovery_iso_path
+}
+
 output "next_steps" {
   description = "Next operational actions to proceed with deployment"
   value       = <<-EOT
@@ -86,11 +91,13 @@ output "next_steps" {
     2. Verify Bastion Split DNS & HAProxy:
        ./scripts/verify_bastion.sh
 
-    3. Attach Assisted Installer Discovery ISO to SNO VM:
-       ./scripts/attach_iso.sh /path/to/rhcos-discovery.iso
+    3. Boot & Rendezvous SNO:
+       # If redhat_offline_token was provided, ISO was fetched and attached automatically.
+       # If manual, run: make attach-iso ISO=/mnt/nvme_data/ocp_storage/discovery-image.iso
+       make start-sno
+       make wait-rendezvous
 
-    4. Power On SNO VM & Monitor Rendezvous:
-       virsh -c ${var.libvirt_uri} start ${var.sno_vm_name}
-       ./scripts/wait_for_rendezvous.sh
+    4. Direct Access to SNO:
+       make ssh-sno
   EOT
 }

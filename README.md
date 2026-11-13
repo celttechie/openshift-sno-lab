@@ -143,16 +143,27 @@ make provision-bastion
 make verify-bastion
 ```
 
-### 4. Attach Discovery ISO & Power On SNO
-Download your Discovery ISO from [Red Hat Hybrid Cloud Console](https://console.redhat.com/openshift/assisted-installer/clusters) and attach it to the SNO VM:
-```bash
-make attach-iso ISO=/mnt/nvme_data/ocp_storage/discovery-image.iso
-make start-sno
-```
+### 4. Boot SNO via Discovery ISO
+Choose between zero-touch automated API provisioning or manual ISO attachment:
+
+- **Automated (Zero-Touch via OpenTofu)**: Set `redhat_offline_token = "..."` and `sno_autostart = true` in `terraform.tfvars`. OpenTofu will automatically create the cluster in the Assisted Installer API, stream the ISO directly to the NVMe pool with your SSH keys embedded, and boot the VM.
+- **Assisted Installer API Target**: Run `make fetch-iso TOKEN="<your_token>"` to stream the ISO directly to the hypervisor.
+- **Manual Web Console**: Download from [console.redhat.com/openshift/assisted-installer/clusters](https://console.redhat.com/openshift/assisted-installer/clusters) (embedding `.keys/id_ed25519_operator.pub`), transfer to `t5600:/mnt/nvme_data/ocp_storage/discovery-image.iso`, and attach:
+  ```bash
+  make attach-iso ISO=/mnt/nvme_data/ocp_storage/discovery-image.iso
+  make start-sno
+  ```
 
 ### 5. Track Installation & Rendezvous
+Launch the automated rendezvous monitor:
 ```bash
 make wait-rendezvous
+```
+The monitor will automatically detect CoreOS disk installation, eject the ISO, reboot into NVMe, and sync the admin kubeconfig to `sno-bastion:~/.kube/config` and `./.kube/config`.
+
+To open an SSH session directly into the SNO node:
+```bash
+make ssh-sno
 ```
 
 For complete step-by-step guidance including web console access and post-installation operations, refer to the [RUNBOOK.md](file:///home/bjarrett/Projects/openshift-sno-lab/RUNBOOK.md).
